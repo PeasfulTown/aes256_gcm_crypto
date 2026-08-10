@@ -1,0 +1,68 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*' # Triggers a GitHub Release when a tag like v1.0.0 is pushed
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        include:
+          - target: win-x64
+            name: windows
+          - target: linux-x64
+            name: linux
+            
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x' # Adjust this if you are using .NET 6 or .NET 9, etc.
+
+    - name: Publish Single-File Executable
+      # This compiles the code into a standalone executable that doesn't require .NET to be installed on the user's machine
+      run: dotnet publish aes256_gcm_encryption_tool.csproj -c Release -r ${{ matrix.target }} --self-contained true -p:PublishSingleFile=true -o ./out
+
+    - name: Upload Artifact (Available on every commit)
+      uses: actions/upload-artifact@v4
+      with:
+        name: aes256-tool-${{ matrix.name }}
+        path: ./out/
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only run this job if the workflow was triggered by pushing a tag (e.g. git tag v1.0.0 && git push origin v1.0.0)
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Zip files for Release
+      run: |
+        # Zip the downloaded directories so they are easier for users to download
+        zip -r aes256-tool-windows.zip aes256-tool-windows/
+        zip -r aes256-tool-linux.zip aes256-tool-linux/
+        
+    - name: Publish to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          aes256-tool-windows.zip
+          aes256-tool-linux.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
