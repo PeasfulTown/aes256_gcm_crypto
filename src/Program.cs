@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Security.Cryptography.X509Certificates;
 
 namespace aes256_gcm_encryption_tool;
 
@@ -9,7 +10,8 @@ class Program
     {
         string mode = "";
         string value = "";
-        string keyPath = "";
+        string keyfile = "";
+        string key = "";
 
         for (int i = 0; i < args.Length; ++i)
         {
@@ -31,11 +33,19 @@ class Program
                         ++i;
                     }
                     break;
+                case "--keyfile":
+                case "-f":
+                    if (i + 1 < args.Length)
+                    {
+                        keyfile = args[i + 1];
+                        ++i;
+                    }
+                    break;
                 case "--key":
                 case "-k":
                     if (i + 1 < args.Length)
                     {
-                        keyPath = args[i + 1];
+                        key = args[i + 1];
                         ++i;
                     }
                     break;
@@ -49,7 +59,7 @@ class Program
 
         if (string.IsNullOrEmpty(mode))
         {
-            Console.WriteLine("Error: Mode is required.");
+            Console.Error.WriteLine("Error: --mode is required.");
             PrintUsage();
             Environment.ExitCode = 1;
             return;
@@ -61,41 +71,82 @@ class Program
             {
                 case "gen":
                     string newKeyBase64 = Aes256Crypto.GenerateKeyBase64();
-                    if (string.IsNullOrEmpty(keyPath))
+                    if (string.IsNullOrEmpty(keyfile))
                     {
                         Console.WriteLine(newKeyBase64);
                     }
                     else
                     {
-                        File.WriteAllText(keyPath, newKeyBase64);
-                        Console.WriteLine($"Key successfully written to {keyPath}");
+                        if (File.Exists(keyfile))
+                        {
+                             Console.Error.WriteLine($"Error: File already exists at {keyfile}. Don't want to " + 
+                                 $"overwrite.");
+                             Environment.ExitCode = 1;
+                             return;
+                        }
+                            
+                        File.WriteAllText(keyfile, newKeyBase64);
+                        Console.WriteLine($"Key successfully written to {keyfile}");
                     }
                     break;
 
                 case "encrypt":
-                    if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(keyPath))
+                    if (string.IsNullOrEmpty(value))
                     {
-                        Console.WriteLine("Error: Both --value and --key are required for encryption.");
+                        Console.Error.WriteLine("Error: --value is needed for encryption.");
                         Environment.ExitCode = 1;
                         return;
                     }
-                    string encKeyBase64 = File.ReadAllText(keyPath).Trim();
-                    byte[] encKey = Convert.FromBase64String(encKeyBase64);
-                    string encrypted = Aes256Crypto.Encrypt(value, encKey);
-                    Console.WriteLine(encrypted);
+
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        byte[] encKey = Convert.FromBase64String(key);
+                        string encrypted = Aes256Crypto.Encrypt(value, encKey);
+                        Console.WriteLine(encrypted);
+                    }
+                    else if (!string.IsNullOrEmpty(keyfile))
+                    {
+                        string encKeyBase64 = File.ReadAllText(keyfile).Trim();
+                        byte[] encKey = Convert.FromBase64String(encKeyBase64);
+                        string encrypted = Aes256Crypto.Encrypt(value, encKey);
+                        Console.WriteLine(encrypted);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Error: Either --key or --keyfile is needed for encryption");
+                        Environment.ExitCode = 1;
+                        return;
+                    }
+
                     break;
 
                 case "decrypt":
-                    if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(keyPath))
+                    if (string.IsNullOrEmpty(value))
                     {
-                        Console.WriteLine("Error: Both --value and --key are required for decryption.");
+                        Console.Error.WriteLine("Error: --value is needed for decryption.");
                         Environment.ExitCode = 1;
                         return;
                     }
-                    string decKeyBase64 = File.ReadAllText(keyPath).Trim();
-                    byte[] decKey = Convert.FromBase64String(decKeyBase64);
-                    string decrypted = Aes256Crypto.Decrypt(value, decKey);
-                    Console.WriteLine(decrypted);
+
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        byte[] decKey = Convert.FromBase64String(key);
+                        string decrypted = Aes256Crypto.Decrypt(value, decKey);
+                        Console.WriteLine(decrypted);
+                    }
+                    else if (!string.IsNullOrEmpty(keyfile))
+                    {
+                        string decKeyBase64 = File.ReadAllText(keyfile).Trim();
+                        byte[] decKey = Convert.FromBase64String(decKeyBase64);
+                        string decrypted = Aes256Crypto.Decrypt(value, decKey);
+                        Console.WriteLine(decrypted);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Error: Either --key or --keyfile is needed for decryption.");
+                        Environment.ExitCode = 1;
+                        return;
+                    }
                     break;
 
                 default:
@@ -113,11 +164,13 @@ class Program
 
     static void PrintUsage()
     {
-        Console.WriteLine("Usage: dotnet run -- --mode [encrypt/decrypt/gen] --value [value] --key [path to keyfile]");
+        string appName = AppDomain.CurrentDomain.FriendlyName;
+        Console.WriteLine($"Usage: {appName} --mode [encrypt/decrypt/gen] --value [value] [--key <base64_key> | --keyfile <path>]");
         Console.WriteLine("\nOptions:");
         Console.WriteLine("  -m, --mode     Mode of operation: 'gen', 'encrypt', or 'decrypt'");
         Console.WriteLine("  -v, --value    The plain text to encrypt, or the ciphertext to decrypt");
-        Console.WriteLine("  -k, --key      Path to the file containing the Base64 AES-256 key");
+        Console.WriteLine("  -k, --key      The Base64 AES-256 key string directly");
+        Console.WriteLine("  -f, --keyfile  Path to the file containing the Base64 AES-256 key");
         Console.WriteLine("                 (For 'gen' mode, if provided, the key will be written to this file)");
         Console.WriteLine("  -h, --help     Show this help message");
     }
